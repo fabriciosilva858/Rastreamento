@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rastreamento de Localização com ID</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #map {
+            width: 100%;
+            height: 70vh;
+        }
+        button, input {
+            margin: 10px;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Rastreamento de Localização</h1>
+    <div>
+        <strong>ID do Usuário:</strong> <span id="userIdDisplay"></span>
+    </div>
+    <button id="startTrackingButton">Iniciar Rastreamento</button>
+    <button id="stopTrackingButton" style="display: none;">Parar Rastreamento</button>
+    <div>
+        <input type="text" id="trackUserIdInput" placeholder="Digite ID para rastrear" />
+        <button id="trackUserButton">Rastrear Usuário</button>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([-23.5505, -46.6333], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        let userMarker;
+        let trackingInterval;
+        const history = [];
+        const userMarkers = {}; // Para armazenar marcadores de outros usuários
+        let userId;
+
+        // Função para gerar um ID aleatório
+        function generateUserId() {
+            return 'user_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Função para obter o ID da URL ou gerar um novo
+        function getUserIdFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('id') || generateUserId(); // Gera um ID se não houver na URL
+        }
+
+        // Função para atualizar a URL com o ID
+        function updateUrlWithUserId(id) {
+            const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?id=' + id;
+            window.history.replaceState({ path: newUrl }, '', newUrl);
+        }
+
+        function updatePosition(lat, lng) {
+            history.push([lat, lng]);
+            if (userMarker) {
+                userMarker.setLatLng([lat, lng]);
+            } else {
+                userMarker = L.marker([lat, lng]).addTo(map);
+            }
+            map.setView([lat, lng], 15);
+
+            // Adiciona uma linha no histórico
+            if (history.length > 1) {
+                L.polyline(history, { color: 'blue' }).addTo(map);
+            }
+
+            // Envia a localização ao servidor (exemplo)
+            fetch('http://localhost:3000/api/location', {
+                method: 'POST',
+                body: JSON.stringify({ id: userId, lat, lng }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        function startTracking() {
+            document.getElementById('userIdDisplay').innerText = userId; // Exibir o ID no HTML
+            console.log('ID do usuário:', userId); // Exibir o ID no console
+
+            document.getElementById('startTrackingButton').style.display = 'none';
+            document.getElementById('stopTrackingButton').style.display = 'inline-block';
+
+            if (navigator.geolocation) {
+                trackingInterval = setInterval(() => {
+                    navigator.geolocation.getCurrentPosition((position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        updatePosition(lat, lng);
+                    }, (error) => {
+                        console.error('Erro ao obter a localização:', error);
+                    });
+                }, 5000);
+            } else {
+                alert('Seu navegador não suporta geolocalização.');
+            }
+        }
+
+        function stopTracking() {
+            clearInterval(trackingInterval);
+            document.getElementById('startTrackingButton').style.display = 'inline-block';
+            document.getElementById('stopTrackingButton').style.display = 'none';
+        }
+
+        // Função para rastrear outro usuário
+        async function trackUser() {
+            const trackUserId = document.getElementById('trackUserIdInput').value;
+            if (!trackUserId) {
+                alert('Por favor, insira um ID para rastrear.');
+                return;
+            }
+
+            // Simulação de busca da localização do usuário no servidor
+            const response = await fetch(`http://localhost:3000/api/location/${trackUserId}`);
+            const userData = await response.json();
+            if (userData && userData.lat && userData.lng) {
+                // Adiciona ou atualiza o marcador do usuário rastreado
+                if (!userMarkers[trackUserId]) {
+                    userMarkers[trackUserId] = L.marker([userData.lat, userData.lng]).addTo(map)
+                        .bindPopup(`ID: ${trackUserId}`).openPopup();
+                } else {
+                    userMarkers[trackUserId].setLatLng([userData.lat, userData.lng]);
+                }
+            } else {
+                alert('Usuário não encontrado ou sem localização disponível.');
+            }
+        }
+
+        // Inicializa o ID do usuário
+        userId = getUserIdFromUrl();
+        document.getElementById('userIdDisplay').innerText = userId;
+        updateUrlWithUserId(userId); // Atualiza a URL com o ID
+
+        document.getElementById('startTrackingButton').onclick = startTracking;
+        document.getElementById('stopTrackingButton').onclick = stopTracking;
+        document.getElementById('trackUserButton').onclick = trackUser;
+    </script>
+</body>
+</html>
